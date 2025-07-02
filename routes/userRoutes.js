@@ -70,4 +70,29 @@ router.post('/login', async (req, res) => {
     }
 });
 
+// route pour récupérer le profile utilisateur authentifié
+router.get('/profile', async (req, res) => {
+    // récupération du token pour avoir l'autaurisation de récupérer les information l'utilisateur
+    const userId = req.user.idUser;
+
+
+ const getProfile = "SELECT idUser, name, mail from users where idUser =?;";
+
+ try {
+
+    const [result] = await db.query(getProfile, [userId])
+
+    if (result.length > 0){
+        res.status(200).json(result[0]);
+    } else {    
+        res.status(404).json({message: "utilisateur introuvable"})
+   
+ }
+    
+ } catch (error) {
+    res.status(500).json({message: "erreur lors de la récupération du profile", error})
+    console.log(error);
+ }
+})
+
 export default router;
