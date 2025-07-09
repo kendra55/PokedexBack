@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../configuration/bd.js';
 import dotenv from "dotenv";
+import checkToken from '../configuration/middleware/CheckToken.js';
 
 // création du router permettant de gérer les routes liées aux utilisateurs
 const router = express.Router();
@@ -41,19 +42,28 @@ router.post('/login', async (req, res) => {
 
         const userData = result[0];
 
-        if (result){
+        if (result.length > 0 ){
 
             const checkPassword = await bcrypt.compare(password, userData.password);
             
             if (checkPassword == true){
 
                 // création du token
-                const token = jwt.sign({idUser: userData.idUser, username: userData.name}, process.env.SECRET_KEY, {expiresIn: "1h"});
+                const token = jwt.sign
+                ({idUser: userData.idUser, username: userData.name},
+                     process.env.SECRET_KEY,
+                      {expiresIn: "12h"});
 
                 res.status(201).json({
                     message: "connexion autorisé",
-                    token: token
-                });
+                    token: token,
+                    user: {
+                       id: userData.idUser,
+                       name: userData.name,
+                     mail: mail
+                      }
+                     });
+                     
             } else {
                 res.status(403).json({message: "accès refusé"});
             }
@@ -71,7 +81,7 @@ router.post('/login', async (req, res) => {
 });
 
 // route pour récupérer le profile utilisateur authentifié
-router.get('/profile', async (req, res) => {
+router.get('/profile', checkToken, async (req, res) => {
     // récupération du token pour avoir l'autaurisation de récupérer les information l'utilisateur
     const userId = req.user.idUser;
 
@@ -95,4 +105,58 @@ router.get('/profile', async (req, res) => {
  }
 })
 
-export default router;
+// route pour modifier le profile utilisateur authentifié
+router.put('/profile/update', checkToken, async (req, res) => {
+    // récupération des information utilisateur
+    const {name, mail} = req.body;
+    const userId = req.user.idUser;
+    const updateUser = "UPDATE Users SET name= ?, mail= ? where idUser =?;";
+
+    try { //db. query sert a executer une requete SQL (donc faire une recherche dans la base de données)
+        await db.query(updateUser, [name, mail, userId])
+        res.status(200).json({ message: "profile modifié"});
+        
+    } catch (error) {
+        // gestion en cas d'erreur
+        res.status(500).json({message: "erreur lors de la modification du profile", error})
+        
+    }
+});
+
+router.put('/profile/password/update', checkToken, async (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    const userId = req.user.idUser;
+
+    try {
+        // 1. Récupérer le password actuel en base
+        const selectUser = "SELECT password FROM users WHERE idUser = ?";
+        const [rows] = await db.query(selectUser, [userId]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ message: "utilisateur introuvable" });
+        }
+
+        const currentPassword = rows[0].password;
+
+        // 2. Vérifier l'ancien mot de passe
+        const isMatch = await bcrypt.compare(oldPassword, currentPassword);
+        if (!isMatch) {
+            return res.status(403).json({ message: "ancien mot de passe incorrect" });
+        }
+
+        // 3. Hasher le nouveau mot de passe
+        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+        // 4. Mettre à jour le mot de passe
+        const updatePassword = "UPDATE users SET password = ? WHERE idUser = ?";
+        await db.query(updatePassword, [hashedNewPassword, userId]);
+
+        res.status(200).json({ message: "mot de passe modifié avec succès" });
+
+    } catch (error) {
+        res.status(500).json({ message: "erreur lors de la modification du mot de passe", error });
+        console.log(error);
+    }
+});
+
+export default router;  

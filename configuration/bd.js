@@ -12,4 +12,5 @@ const bdd = mysql.createPool({
     database: process.env.DB_NAME
 });
 
+
 export default bdd;
